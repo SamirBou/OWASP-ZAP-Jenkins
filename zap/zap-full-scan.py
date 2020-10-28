@@ -3,7 +3,7 @@
 #
 # ZAP is an HTTP/HTTPS proxy for assessing web application security.
 #
-# Copyright 2016 ZAP Development Team
+# Copyright 2017 ZAP Development Team
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,17 +17,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# This script runs a baseline scan against a target URL using ZAP
+# This script runs a full scan against a target URL using ZAP
 #
 # It can either be run 'standalone', in which case depends on
 # https://pypi.python.org/pypi/python-owasp-zap-v2.4 and Docker, or it can be run
 # inside one of the ZAP docker containers. It automatically detects if it is
 # running in docker so the parameters are the same.
 #
-# By default it will spider the target URL for one minute, but you can change
+# By default it will spider the target URL with no time limit, but you can change
 # that via the -m parameter.
-# It will then wait for the passive scanning to finish - how long that takes
-# depends on the number of pages found.
+# It will then perform an active scan of all of the URLs found by the spider.
+# This may take a significant amount of time.
 # It will exit with codes of:
 #	0:	Success
 #	1:	At least 1 FAIL
@@ -41,8 +41,11 @@
 # to be handled differently.
 # You can also add your own messages for the rules by appending them after a tab
 # at the end of each line.
+# By default all of the active scan rules run but you can prevent rules from
+# running by supplying a configuration file with the rules set to IGNORE.
 
 import getopt
+import json
 import logging
 import os
 import os.path
@@ -58,10 +61,10 @@ config_msg = {}
 out_of_scope_dict = {}
 min_level = 0
 
-# Pscan rules that aren't really relevant, e.g. the examples rules in the alpha set
-ignore_scan_rules = ['-1', '50003', '60000', '60001']
+# Scan rules that aren't really relevant, e.g. the examples rules in the alpha set
+blacklist = ['-1', '50003', '60000', '60001', '60100', '60101']
 
-# Pscan rules that are being addressed
+# Scan rules that are being addressed
 in_progress_issues = {}
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
@@ -70,37 +73,37 @@ logging.getLogger("requests").setLevel(logging.WARNING)
 
 
 def usage():
-    print('Usage: zap-baseline.py -t <target> [options]')
+    print('Usage: zap-full-scan.py -t <target> [options]')
     print('    -t target         target URL including the protocol, e.g. https://www.example.com')
     print('Options:')
     print('    -h                print this help message')
     print('    -c config_file    config file to use to INFO, IGNORE or FAIL warnings')
     print('    -u config_url     URL of config file to use to INFO, IGNORE or FAIL warnings')
-    print('    -g gen_file       generate default config file (all rules set to WARN)')
-    print('    -m mins           the number of minutes to spider for (default 1)')
+    print('    -g gen_file       generate default config file(all rules set to WARN)')
+    print('    -m mins           the number of minutes to spider for (defaults to no limit)')
     print('    -r report_html    file to write the full ZAP HTML report')
-    print('    -w report_md      file to write the full ZAP Wiki (Markdown) report')
+    print('    -w report_md      file to write the full ZAP Wiki(Markdown) report')
     print('    -x report_xml     file to write the full ZAP XML report')
     print('    -J report_json    file to write the full ZAP JSON document')
-    print('    -a                include the alpha passive scan rules as well')
+    print('    -a                include the alpha active and passive scan rules as well')
     print('    -d                show debug messages')
     print('    -P                specify listen port')
     print('    -D                delay in seconds to wait for passive scanning ')
     print('    -i                default rules not in the config file to INFO')
-    print('    -I                do not return failure on warning')
     print('    -j                use the Ajax spider in addition to the traditional one')
     print('    -l level          minimum level to show: PASS, IGNORE, INFO, WARN or FAIL, use with -s to hide example URLs')
-    print('    -n context_file   context file which will be loaded prior to spidering the target')
+    print('    -n context_file   context file which will be loaded prior to scanning the target')
     print('    -p progress_file  progress file which specifies issues that are being addressed')
     print('    -s                short output format - dont show PASSes or example URLs')
     print('    -T                max time in minutes to wait for ZAP to start and the passive scan to run')
     print('    -z zap_options    ZAP command line options e.g. -z "-config aaa=bbb -config ccc=ddd"')
     print('    --hook            path to python file that define your custom hooks')
     print('')
-    print('For more details see https://www.zaproxy.org/docs/docker/baseline-scan/')
+    print('For more details see https://github.com/zaproxy/zaproxy/wiki/ZAP-Full-Scan')
 
 
 def main(argv):
+
     global min_level
     global in_progress_issues
     cid = ''
@@ -108,8 +111,8 @@ def main(argv):
     progress_file = ''
     config_file = ''
     config_url = ''
+    mins = 0
     generate = ''
-    mins = 1
     port = 0
     detailed_output = True
     report_html = ''
@@ -125,7 +128,6 @@ def main(argv):
     zap_options = ''
     delay = 0
     timeout = 0
-    ignore_warn = False
     hook_file = None
 
     pass_count = 0
@@ -137,7 +139,7 @@ def main(argv):
     fail_inprog_count = 0
 
     try:
-        opts, args = getopt.getopt(argv, "t:c:u:g:m:n:r:J:w:x:l:hdaijp:sz:P:D:T:I", ["hook="])
+        opts, args = getopt.getopt(argv, "t:c:u:g:m:n:r:J:w:x:l:hdaijp:sz:P:D:T:", ["hook="])
     except getopt.GetoptError as exc:
         logging.warning('Invalid option ' + exc.opt + ' : ' + exc.msg)
         usage()
@@ -180,8 +182,6 @@ def main(argv):
             zap_alpha = True
         elif opt == '-i':
             info_unspecified = True
-        elif opt == '-I':
-            ignore_warn = True
         elif opt == '-j':
             ajax = True
         elif opt == '-l':
@@ -217,7 +217,7 @@ def main(argv):
 
     if running_in_docker():
         base_dir = '/zap/wrk/'
-        if config_file or generate or report_html or report_xml or report_json or report_md or progress_file or context_file:
+        if config_file or generate or report_html or report_xml or report_json or progress_file or context_file:
             # Check directory has been mounted
             if not os.path.exists(base_dir):
                 logging.warning('A file based option has been specified but the directory \'/zap/wrk\' is not mounted ')
@@ -265,11 +265,12 @@ def main(argv):
             params = [
                       '-config', 'spider.maxDuration=' + str(mins),
                       '-addonupdate',
-                      '-addoninstall', 'pscanrulesBeta']  # In case we're running in the stable container
+                      '-addoninstall', 'pscanrulesBeta',  # In case we're running in the stable container
+                      '-addoninstall', 'ascanrulesBeta']
 
             if zap_alpha:
-                params.append('-addoninstall')
-                params.append('pscanrulesAlpha')
+                params.extend(['-addoninstall', 'pscanrulesAlpha'])
+                params.extend(['-addoninstall', 'ascanrulesAlpha'])
 
             add_zap_options(params, zap_options)
 
@@ -286,11 +287,14 @@ def main(argv):
             mount_dir = os.path.dirname(os.path.abspath(context_file))
 
         params = [
-                '-config', 'spider.maxDuration=' + str(mins),
-                '-addonupdate']
+                  '-config', 'spider.maxDuration=' + str(mins),
+                  '-addonupdate',
+                  '-addoninstall', 'pscanrulesBeta',  # In case we're running in the stable container
+                  '-addoninstall', 'ascanrulesBeta']
 
         if (zap_alpha):
             params.extend(['-addoninstall', 'pscanrulesAlpha'])
+            params.extend(['-addoninstall', 'ascanrulesAlpha'])
 
         add_zap_options(params, zap_options)
 
@@ -330,7 +334,23 @@ def main(argv):
             start_scan = datetime.now()
             while ((datetime.now() - start_scan).seconds < delay):
                 time.sleep(5)
-                logging.debug('Delay passive scan check ' + str(delay - (datetime.now() - start_scan).seconds) + ' seconds')
+                logging.debug('Delay active scan ' + str(delay -(datetime.now() - start_scan).seconds) + ' seconds')
+
+        if target.count('/') > 2:
+            # The url can include a valid path, but always reset to scan the host
+            target = target[0:target.index('/', 8)+1]
+
+        # Set up the scan policy
+        scan_policy = 'Default Policy'
+        if config_dict:
+            # They have supplied a config file, use this to define the ascan rules
+            zap.ascan.enable_all_scanners(scanpolicyname=scan_policy)
+            for scanner, state in config_dict.items():
+                if state == 'IGNORE':
+                    # Dont bother checking the result - this will fail for pscan rules
+                    zap.ascan.set_scanner_alert_threshold(id=scanner, alertthreshold='OFF', scanpolicyname=scan_policy)
+
+        zap_active_scan(zap, target, scan_policy)
 
         zap_wait_for_passive_scan(zap, timeout * 60)
 
@@ -342,40 +362,62 @@ def main(argv):
             if detailed_output:
                 print('Total of ' + str(num_urls) + ' URLs')
 
-            alert_dict = zap_get_alerts(zap, target, ignore_scan_rules, out_of_scope_dict)
+            alert_dict = zap_get_alerts(zap, target, blacklist, out_of_scope_dict)
 
-            all_rules = zap.pscan.scanners
+            all_ascan_rules = zap.ascan.scanners('Default Policy')
+            all_pscan_rules = zap.pscan.scanners
             all_dict = {}
-            for rule in all_rules:
+            for rule in all_pscan_rules:
                 plugin_id = rule.get('id')
-                if plugin_id in ignore_scan_rules:
+                if plugin_id in blacklist:
                     continue
-                all_dict[plugin_id] = rule.get('name')
+                all_dict[plugin_id] = rule.get('name') + ' - Passive/' + rule.get('quality')
+            for rule in all_ascan_rules:
+                plugin_id = rule.get('id')
+                if plugin_id in blacklist:
+                    continue
+                all_dict[plugin_id] = rule.get('name') + ' - Active/' + rule.get('quality')
 
             if generate:
                 # Create the config file
                 with open(base_dir + generate, 'w') as f:
-                    f.write('# zap-baseline rule configuration file\n')
+                    f.write('# zap-full-scan rule configuration file\n')
                     f.write('# Change WARN to IGNORE to ignore rule or FAIL to fail if rule matches\n')
+                    f.write('# Active scan rules set to IGNORE will not be run which will speed up the scan\n')
                     f.write('# Only the rule identifiers are used - the names are just for info\n')
                     f.write('# You can add your own messages to each rule by appending them after a tab on each line.\n')
-                    for key, rule in sorted(all_dict.items()):
+                    for key, rule in sorted(all_dict.iteritems()):
                         f.write(key + '\tWARN\t(' + rule + ')\n')
 
             # print out the passing rules
             pass_dict = {}
-            for rule in all_rules:
+            for rule in all_pscan_rules:
                 plugin_id = rule.get('id')
-                if plugin_id in ignore_scan_rules:
+                if plugin_id in blacklist:
                     continue
-                if (plugin_id not in alert_dict):
+                if (not alert_dict.has_key(plugin_id)):
+                    pass_dict[plugin_id] = rule.get('name')
+            for rule in all_ascan_rules:
+                plugin_id = rule.get('id')
+                if plugin_id in blacklist:
+                    continue
+                if not alert_dict.has_key(plugin_id) and not(config_dict.has_key(plugin_id) and config_dict[plugin_id] == 'IGNORE'):
                     pass_dict[plugin_id] = rule.get('name')
 
             if min_level == zap_conf_lvls.index("PASS") and detailed_output:
-                for key, rule in sorted(pass_dict.items()):
+                for key, rule in sorted(pass_dict.iteritems()):
                     print('PASS: ' + rule + ' [' + key + ']')
 
             pass_count = len(pass_dict)
+
+            if detailed_output:
+                # print out the ignored ascan rules(there will be no alerts for these as they were not run)
+                for rule in all_ascan_rules:
+                    plugin_id = rule.get('id')
+                    if plugin_id in blacklist:
+                        continue
+                    if config_dict.has_key(plugin_id) and config_dict[plugin_id] == 'IGNORE':
+                        print('SKIP: ' + rule.get('name') + ' [' + plugin_id + ']')
 
             # print out the ignored rules
             ignore_count, not_used = print_rules(zap, alert_dict, 'IGNORE', config_dict, config_msg, min_level,
@@ -419,7 +461,7 @@ def main(argv):
 
     except IOError as e:
         if hasattr(e, 'args') and len(e.args) > 1:
-            errno, strerror = e.args
+            errno, strerror = e
             print("ERROR " + str(strerror))
             logging.warning('I/O error(' + str(errno) + '): ' + str(strerror))
         else:
@@ -439,7 +481,7 @@ def main(argv):
 
     if fail_count > 0:
         sys.exit(1)
-    elif (not ignore_warn) and warn_count > 0:
+    elif warn_count > 0:
         sys.exit(2)
     elif pass_count > 0:
         sys.exit(0)

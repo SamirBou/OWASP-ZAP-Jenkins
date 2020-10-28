@@ -30,9 +30,8 @@ import sys
 import time
 import traceback
 import errno
+import imp
 import zapv2
-from types import ModuleType
-from importlib.machinery import SourceFileLoader
 from random import randint
 from six.moves.urllib.request import urlopen
 from six import binary_type
@@ -44,18 +43,12 @@ except ImportError:
     logging.warning('Error importing pkg_resources. Is setuptools installed?')
 
 
-class ScanNotStartedException(Exception):
-    pass
-
-
 OLD_ZAP_CLIENT_WARNING = '''A newer version of python_owasp_zap_v2.4
  is available. Please run \'pip install -U python_owasp_zap_v2.4\' to update to
  the latest version.'''.replace('\n', '')
 
 zap_conf_lvls = ["PASS", "IGNORE", "INFO", "WARN", "FAIL"]
 zap_hooks = None
-context_id = None
-context_name = None
 
 def load_custom_hooks(hooks_file=None):
     """ Loads a custom python module which modifies zap scripts behaviour
@@ -69,10 +62,7 @@ def load_custom_hooks(hooks_file=None):
         logging.debug('Could not find custom hooks file at %s ' % hooks_file)
         return
 
-    loader = SourceFileLoader("zap_hooks", hooks_file)
-    hooks_module = ModuleType(loader.name)
-    loader.exec_module(hooks_module)
-    zap_hooks = hooks_module
+    zap_hooks = imp.load_source("zap_hooks", hooks_file)
 
 
 def hook(hook_name=None, **kwargs):
@@ -250,7 +240,7 @@ def cp_to_docker(cid, file, dir):
 
 
 def running_in_docker():
-    return os.path.exists('/.dockerenv') or os.path.exists('/run/.containerenv') or os.environ.get("IS_CONTAINERIZED") == "true"
+    return os.path.exists('/.dockerenv')
 
 
 def add_zap_options(params, zap_options):
@@ -375,16 +365,10 @@ def zap_access_target(zap, target):
         raise IOError(errno.EIO, 'ZAP failed to access: {0}'.format(target))
 
 
-def raise_scan_not_started():
-    raise ScanNotStartedException('Failed to start the scan, check the log/output for more details.')
-
-
 @hook(wrap=True)
 def zap_spider(zap, target):
     logging.debug('Spider ' + target)
-    spider_scan_id = zap.spider.scan(target, contextname=context_name)
-    if not str(spider_scan_id).isdigit():
-        raise_scan_not_started()
+    spider_scan_id = zap.spider.scan(target)
     time.sleep(5)
 
     while (int(zap.spider.status(spider_scan_id)) < 100):
@@ -398,13 +382,11 @@ def zap_ajax_spider(zap, target, max_time):
     logging.debug('AjaxSpider ' + target)
     if max_time:
         zap.ajaxSpider.set_option_max_duration(str(max_time))
-    result = zap.ajaxSpider.scan(target, contextname=context_name)
-    if result != "OK":
-        raise_scan_not_started()
+    zap.ajaxSpider.scan(target)
     time.sleep(5)
 
     while (zap.ajaxSpider.status == 'running'):
-        logging.debug('Ajax Spider running, found urls: %s', zap.ajaxSpider.number_of_results)
+        logging.debug('Ajax Spider running, found urls: ' + zap.ajaxSpider.number_of_results)
         time.sleep(5)
     logging.debug('Ajax Spider complete')
 
@@ -412,9 +394,7 @@ def zap_ajax_spider(zap, target, max_time):
 @hook(wrap=True)
 def zap_active_scan(zap, target, policy):
     logging.debug('Active Scan ' + target + ' with policy ' + policy)
-    ascan_scan_id = zap.ascan.scan(target, recurse=True, scanpolicyname=policy, contextid=context_id)
-    if not str(ascan_scan_id).isdigit():
-        raise_scan_not_started()
+    ascan_scan_id = zap.ascan.scan(target, recurse=True, scanpolicyname=policy)
     time.sleep(5)
 
     while(int(zap.ascan.status(ascan_scan_id)) < 100):
@@ -443,7 +423,7 @@ def zap_wait_for_passive_scan(zap, timeout_in_secs = 0):
 
 
 @hook(wrap=True)
-def zap_get_alerts(zap, baseurl, ignore_scan_rules, out_of_scope_dict):
+def zap_get_alerts(zap, baseurl, blacklist, out_of_scope_dict):
     # Retrieve the alerts using paging in case there are lots of them
     st = 0
     pg = 5000
@@ -455,7 +435,7 @@ def zap_get_alerts(zap, baseurl, ignore_scan_rules, out_of_scope_dict):
         alert_count += len(alerts)
         for alert in alerts:
             plugin_id = alert.get('pluginId')
-            if plugin_id in ignore_scan_rules:
+            if plugin_id in blacklist:
                 continue
             if not is_in_scope(plugin_id, alert.get('url'), out_of_scope_dict):
                 continue
@@ -477,6 +457,10 @@ def get_latest_zap_client_version():
     try:
         version_info = urlopen('https://pypi.python.org/pypi/python-owasp-zap-v2.4/json', timeout=10)
     except Exception as e:
+        logging.warning('Error fetching latest ZAP Python API client version: %s' % e)
+        return None
+
+    if version_info is None:
         logging.warning('Error fetching latest ZAP Python API client version: %s' % e)
         return None
 
@@ -524,13 +508,8 @@ def write_report(file_path, report):
 
 @hook(wrap=True)
 def zap_import_context(zap, context_file):
-    global context_id
-    global context_name
     res = context_id = zap.context.import_context(context_file)
-    try:
-        int(res)
-        context_name = zap.context.context_list[-1]
-    except ValueError:
+    if res.startswith("ZAP Error"):
         context_id = None
         logging.error('Failed to load context file ' + context_file + ' : ' + res)
     return context_id
