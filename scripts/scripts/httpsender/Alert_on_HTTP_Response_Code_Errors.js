@@ -2,18 +2,17 @@
 // By default it will raise 'Info' level alerts for Client Errors (4xx) (apart from 404s) and 'Low' Level alerts for Server Errors (5xx)
 // But it can be easily changed.
 
-pluginid = 100000	// https://github.com/zaproxy/zaproxy/blob/develop/docs/scanners.md
+// The following handles differences in printing between Java 7's Rhino JS engine
+// and Java 8's Nashorn JS engine
+if (typeof println == 'undefined') this.println = print;
+
+pluginid = 100000	// https://github.com/zaproxy/zaproxy/blob/develop/src/doc/scanners.md
 
 function sendingRequest(msg, initiator, helper) {
 	// Nothing to do
 }
 
 function responseReceived(msg, initiator, helper) {
-	if (initiator == 7) { // CHECK_FOR_UPDATES_INITIATOR
-		// Not of interest.
-		return
-	}
-
 	var extensionAlert = org.parosproxy.paros.control.Control.getSingleton().getExtensionLoader().getExtension(
 		org.zaproxy.zap.extension.alert.ExtensionAlert.NAME)
 	if (extensionAlert != null) {
@@ -57,6 +56,9 @@ function responseReceived(msg, initiator, helper) {
 						break
 					case 6:	// MANUAL_REQUEST_INITIATOR
 						type = 15 // User 
+						break
+					case 7:	// CHECK_FOR_UPDATES_INITIATOR
+						type = 1 // Proxied 
 						break
 					case 8:	// BEAN_SHELL_INITIATOR
 						type = 15 // User 
