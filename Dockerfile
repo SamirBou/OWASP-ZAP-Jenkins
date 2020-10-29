@@ -9,7 +9,7 @@ RUN yum install -y epel-release && \
 	java-1.8.0-openjdk wget curl xvfb \
 	xmlstarlet git x11vnc gettext tar unzip \
 	xorg-x11-server-Xvfb openbox xterm \
-	net-tools python3-pip python3-pip \
+	net-tools python3-pip python-pip \
 	firefox nss_wrapper java-1.8.0-openjdk-headless \
 	java-1.8.0-openjdk-devel nss_wrapper git && \
 	yum clean all && \
@@ -36,8 +36,6 @@ RUN curl -s https://raw.githubusercontent.com/zaproxy/zap-admin/master/ZapVersio
 		unzip webswing.zip && \
 		rm webswing.zip && \
 		mv webswing-* webswing && \
-		# Remove Webswing demos
-		rm -R webswing/demo/ && \
 		# Accept ZAP license
 		touch AcceptedLicense
 
@@ -51,15 +49,14 @@ ENV ZAP_PATH /zap/zap.sh
 ENV ZAP_PORT 8080
 ENV HOME /var/lib/jenkins
 
-COPY zap* CHANGELOG.md /zap/
 COPY policies /var/lib/jenkins/.ZAP/policies/
 COPY .xinitrc /var/lib/jenkins/
-COPY webswing.config /zap/webswing/
 COPY scripts /var/lib/jenkins/.ZAP_D/scripts/
-ADD webswing.config /zap/webswing-2.5/webswing.config
+COPY zap /zap/
+ADD webswing.config /zap/webswing-2.5.12/webswing.config
 
-RUN chown root:root /zap -R && \
-	chown root:root -R /var/lib/jenkins && \
+RUN chown 100:100 /zap -R && \
+	chown 100:100 -R /var/lib/jenkins && \
 	chmod 777 /var/lib/jenkins -R && \
 	chmod 777 /zap -R && \
 	chmod 777 /var/lib/jenkins/.xinitrc
