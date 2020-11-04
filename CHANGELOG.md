@@ -1,6 +1,45 @@
 # Changelog
 All notable changes to the docker containers will be documented in this file.
 
+### 2020-10-13
+ - Alert_on_Unexpected_Content_Types.js > Added Content-Type application/health+json to the list of expected types.
+ 
+### 2020-09-18
+ - Fail immediately if the spider scans were not started to provide better error message.
+
+###  2020-08-28
+ - Packaged scans will use the provided context when spidering and active scanning.
+
+###  2020-08-27
+ - Updated to use webswing 2.5.12
+
+###  2020-08-03
+ - Add `IS_CONTAINERIZED` environment variable to the container image, used in the python script to check for containerized environments (e.g. containerd) without relying on container runtime specific files.
+
+###  2020-07-17
+ - Make podman compatible
+
+###  2020-05-20
+ - Make docker stable use ubuntu 20.04
+
+###  2020-05-13
+ - Make `python` command use Python 3.
+
+### 2020-05-12
+ - Removed python 2, only python 3 will be supported going forward.
+
+### 2020-04-27
+- Add `application/vnd.api+json` to the list of expected API content types.
+
+### 2020-04-08
+- Changed zap-full-scan.py and zap-api-scan.py to include the -I option to ignore only warning used by zap-baseline-scan.py
+
+### 2020-04-06
+- Make API scan policy available to the root user, otherwise it would fail to start the active scan.
+
+### 2020-04-01
+- Changed live and weekly images to use Java 11.
+
 ### 2020-02-21
  - Changed zap-full-scan.py, zap-api-scan.py, and zap-baseline-scan.py to include the missing check for markdown file.
 

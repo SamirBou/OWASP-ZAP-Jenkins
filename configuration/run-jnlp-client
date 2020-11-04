@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # This script will launch the JNLP remoting client that Jenkins master server
-# will use for the auto-discovery of this agent.
+# will use for the auto-discovery of this slave.
 #
 
 # The directory that Jenkins will execute the builds and store cache files.
@@ -48,8 +48,8 @@ if [[ $# -gt 1 ]]; then
   if [[ "$@" != *"-tunnel "* ]]; then
     if [ ! -z "$JENKINS_TUNNEL" ]; then
       PARAMS="$PARAMS -tunnel $JENKINS_TUNNEL"
-    elif [ ! -z "$JENKINS_AGENT_SERVICE_HOST" ] && [ ! -z "$JENKINS_AGENT_SERVICE_PORT" ]; then
-      PARAMS="$PARAMS -tunnel $JENKINS_AGENT_SERVICE_HOST:$JENKINS_AGENT_SERVICE_PORT"
+    elif [ ! -z "$JENKINS_SLAVE_SERVICE_HOST" ] && [ ! -z "$JENKINS_SLAVE_SERVICE_PORT" ]; then
+      PARAMS="$PARAMS -tunnel $JENKINS_SLAVE_SERVICE_HOST:$JENKINS_SLAVE_SERVICE_PORT"
     fi
   fi
 
