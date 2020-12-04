@@ -1,6 +1,21 @@
 # Changelog
 All notable changes to the docker containers will be documented in this file.
 
+### 2020-12-02
+ - Use `ARG` command (for `DEBIAN_FRONTEND`) instead of `ENV` so that the parameter does not persist after the build process has been completed.
+
+### 2020-11-27
+ - Move logging level of Params from `info` to `debug`, as it can contain sensitive data when authenticated scans are run.
+ 
+### 2020-11-24
+ - Add support for authenticated scans.
+
+### 2020-11-19
+ - Add zap_tune function (disable all tags and limit pscan alerts to 10), zap_tuned hook and disable recovery log.
+
+### 2020-11-16
+ - Update zap-api-scan.py to add support for GraphQL.
+
 ### 2020-10-13
  - Alert_on_Unexpected_Content_Types.js > Added Content-Type application/health+json to the list of expected types.
  
