@@ -18,26 +18,25 @@ RUN pip3 install --upgrade pip zapcli python-owasp-zap-v2.4
 RUN update-alternatives --install /usr/bin/python python /usr/bin/python3 1 \
     && update-alternatives --install /usr/bin/pip pip /usr/bin/pip3 1
 
-RUN mkdir -p /var/lib/jenkins/.vnc
-RUN mkdir -p /zap && mkdir -p /zap/wrk
+USER 0
 
-WORKDIR /zap
+RUN mkdir -p /home/zap/wrk
+RUN mkdir -p /zap/wrk
+
+WORKDIR /home/zap
 
 ENV ZAP_PORT 8080
 ENV IS_CONTAINERIZED true
-ENV HOME /var/lib/jenkins
-ENV PATH $JAVA_HOME/bin:/zap:$PATH
-ENV ZAP_PATH /zap/zap.sh
+ENV HOME /home/zap
+ENV PATH $JAVA_HOME/bin:/home/zap:$PATH
+ENV ZAP_PATH /home/zap/zap.sh
 ENV JAVA_HOME /usr/lib/jvm/java-8-openjdk-amd64/
 
-COPY zap* CHANGELOG.md /zap/
-COPY webswing.config /zap/webswing/
-COPY configuration/* /var/lib/jenkins/
-COPY configuration/run-jnlp-client /usr/local/bin/run-jnlp-client
-COPY policies /var/lib/jenkins/.ZAP/policies/
-COPY .xinitrc /var/lib/jenkins/
-COPY scripts /zap/.ZAP_D/scripts/
-COPY .xinitrc /zap/
+COPY zap* CHANGELOG.md /home/zap/
+COPY webswing.config /home/zap/webswing/
+COPY policies /home/zap/.ZAP/policies/
+COPY .xinitrc /home/zap/
+COPY scripts /home/zap/.ZAP_D/scripts/
 
 RUN curl -s https://raw.githubusercontent.com/zaproxy/zap-admin/master/ZapVersions.xml | xmlstarlet sel -t -v //url |grep -i Linux | wget -nv --content-disposition -i - -O - | tar zxv && \
 		cp -R ZAP*/* . &&  \
@@ -50,12 +49,9 @@ RUN curl -s https://raw.githubusercontent.com/zaproxy/zap-admin/master/ZapVersio
 		# Accept ZAP license
 		touch AcceptedLicense
 
-RUN chown 0:0 /zap -R && \
-    chown 0:0 -R /var/lib/jenkins && \
-    chmod 777 /var/lib/jenkins -R && \
-    chmod 777 /zap -R
-
-WORKDIR /var/lib/jenkins
-
-# Run the Jenkins JNLP client
-ENTRYPOINT ["/usr/local/bin/run-jnlp-client"]
+RUN chown 0:0 /home/zap -R && \
+    chmod 777 /home/zap -R && \
+    chmod 777 /zap -R && \
+    chown 0:0 /zap -R 
+    
+WORKDIR /home/zap
