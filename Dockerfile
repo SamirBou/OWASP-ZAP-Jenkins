@@ -18,10 +18,10 @@ RUN pip3 install --upgrade pip zapcli python-owasp-zap-v2.4
 RUN update-alternatives --install /usr/bin/python python /usr/bin/python3 1 \
     && update-alternatives --install /usr/bin/pip pip /usr/bin/pip3 1
 
-USER 0
+RUN useradd -u 1001 -g 0 -m zap
+# USER 1001
 
-RUN mkdir -p /home/zap/wrk
-RUN mkdir -p /zap/wrk
+RUN mkdir /home/zap/wrk
 
 WORKDIR /home/zap
 
@@ -32,11 +32,11 @@ ENV PATH $JAVA_HOME/bin:/home/zap:$PATH
 ENV ZAP_PATH /home/zap/zap.sh
 ENV JAVA_HOME /usr/lib/jvm/java-8-openjdk-amd64/
 
-COPY zap* CHANGELOG.md /home/zap/
-COPY webswing.config /home/zap/webswing/
-COPY policies /home/zap/.ZAP/policies/
-COPY .xinitrc /home/zap/
-COPY scripts /home/zap/.ZAP_D/scripts/
+COPY --chown=1001:0 zap* CHANGELOG.md /home/zap/
+COPY --chown=1001:0 webswing.config /home/zap/webswing/
+COPY --chown=1001:0 policies /home/zap/.ZAP/policies/
+COPY --chown=1001:0 .xinitrc /home/zap/
+COPY --chown=1001:0 scripts /home/zap/.ZAP_D/scripts/
 
 RUN curl -s https://raw.githubusercontent.com/zaproxy/zap-admin/master/ZapVersions.xml | xmlstarlet sel -t -v //url |grep -i Linux | wget -nv --content-disposition -i - -O - | tar zxv && \
 		cp -R ZAP*/* . &&  \
@@ -48,10 +48,7 @@ RUN curl -s https://raw.githubusercontent.com/zaproxy/zap-admin/master/ZapVersio
 		mv webswing-* webswing && \
 		# Accept ZAP license
 		touch AcceptedLicense
-
-RUN chown 0:0 /home/zap -R && \
-    chmod 777 /home/zap -R && \
-    chmod 777 /zap -R && \
-    chown 0:0 /zap -R 
     
-WORKDIR /home/zap
+RUN chown 1001:0 /home/zap -R
+
+USER 1001

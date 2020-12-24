@@ -324,7 +324,7 @@ def start_docker_zap(docker_image, port, extra_zap_params, mount_dir):
     params = ['docker', 'run']
 
     if mount_dir:
-        params.extend(['-v', mount_dir + ':/zap/wrk/:rw'])
+        params.extend(['-v', mount_dir + ':/home/zap/wrk/:rw'])
 
     params.extend([
             '-u', 'zap',
